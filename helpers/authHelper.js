@@ -29,6 +29,19 @@ const CONFIG = existsSync(configFilePath)
 			},
 	  };
 
+
+const makeHash = async (token) => (await pbkdf2Async(token, CONFIG.salt, 100000, 64, 'sha512')).toString('hex');
+
+const extractToken = (authorizationHeader) => {
+	const [type, fullToken] = authorizationHeader.split(' ');
+	if (type !== 'harperdb') {
+		throw new Error('Invalid Authorization Type');
+	}
+
+	const [user, token] = fullToken.split('.');
+	return { user, token };
+};
+
 /**
  * Create the schema and table for the authentication tokens
  * @param {*} request
