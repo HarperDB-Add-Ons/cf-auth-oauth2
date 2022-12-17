@@ -26,8 +26,7 @@ LOGOUT: /logout
 1. Ensure the above config file or environment variables have been set.
 2. Create a GET request to [$HOST/oauth/setup]($HOST/oauth/setup) to create the auth schema and table.
 3. Visit [http://$HOST/oauth/login/github](http://$HOST/oauth/login/github) to be redirected to the GitHub authorization page to create a token.
-4. Save the return HDB Token for use in the Authorization header for the following requests.
-  - You should use the token in the Authorization header in the format `harperdb $token`
+4. Save the return HDB Token for use in the Authorization header for the following requests. You should use the token in the Authorization header in the format `harperdb $token`
 5. With the HDB Token in the Authorization header, make a GET call to [http://$HOST/oauth/create/schema/:schema](http://$HOST/oauth/create/schema/:schema) to create a schema
 6. With the HDB Token in the Authorization header, make a GET call to [http://$HOST/oauth/create/table/:schema/:table](http://$HOST/oauth/create/table/:schema/:table) to create a table
 7. With the HDB Token in the Authorization header, make a POST call to [http://$HOST/oauth/:schema/:table](http://$HOST/oauth/:schema/:table) to insert records into the server (the request body can be an object or an array of objects).
