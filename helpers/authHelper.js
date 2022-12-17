@@ -100,7 +100,6 @@ const loadRoutes = async ({ server, hdbCore }) => {
 		});
 
 		return `${hdbTokenUser}.${hdbToken}`;
-		reply.send({ access_token: token.access_token });
 	});
 
 	server.get(`/${CONFIG.logout}`, async function (request, reply) {
