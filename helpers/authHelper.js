@@ -96,12 +96,12 @@ const loadRoutes = async ({ server, hdbCore }) => {
 	});
 
 	const callback = CONFIG.callback.split('/').pop();
-	server.get(`/${callback}`, async function (request, reply) {
-		const token = await this.githubOAuth2.getAccessTokenFromAuthorizationCodeFlow(request);
+	server.get(`/${callback}`, async function (request) {
+		const { access_token } = await this.githubOAuth2.getAccessTokenFromAuthorizationCodeFlow(request);
 
-		const hdbToken = (await randomBytesAsync(12)).toString('hex');
+		const hdbToken = await makeHash(access_token);
 		const hdbTokenUser = (await randomBytesAsync(12)).toString('hex');
-		const hashedToken = await pbkdf2Async(hdbToken, CONFIG.salt, 100000, 64, 'sha512');
+		const hashedToken = await makeHash(hdbToken);
 
 		await hdbCore.requestWithoutAuthentication({
 			body: {
