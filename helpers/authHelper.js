@@ -116,41 +116,44 @@ const loadRoutes = async ({ server, hdbCore }) => {
 	});
 
 	server.get(`/${CONFIG.logout}`, async function (request, reply) {
-		const userToken = request.headers.authorization;
-		const [user, token] = userToken.split('.');
+		try {
+			const { user, token } = extractToken(request.headers.authorization);
 
-		const results = await hdbCore.requestWithoutAuthentication({
-			body: {
-				operation: 'search_by_hash',
-				schema: CONFIG.schema,
-				table: CONFIG.table,
-				hash_values: [user],
-				get_attributes: ['token'],
-			},
-		});
+			const results = await hdbCore.requestWithoutAuthentication({
+				body: {
+					operation: 'search_by_hash',
+					schema: CONFIG.schema,
+					table: CONFIG.table,
+					hash_values: [user],
+					get_attributes: ['token'],
+				},
+			});
 
-		for (const result of results) {
-			const hashedToken = result.token;
-			if (timingSafeEqual(token, hashedToken)) {
-				await hdbCore.requestWithoutAuthentication({
-					body: {
-						operation: 'delete',
-						schema: CONFIG.schema,
-						table: CONFIG.table,
-						hash_values: [user],
-					},
-				});
+			for (const result of results) {
+				const hashedToken = result.token;
+				const hashedReceivedToken = await makeHash(token);
+				if (timingSafeEqual(Buffer.from(hashedReceivedToken), Buffer.from(hashedToken))) {
+					await hdbCore.requestWithoutAuthentication({
+						body: {
+							operation: 'delete',
+							schema: CONFIG.schema,
+							table: CONFIG.table,
+							hash_values: [user],
+						},
+					});
+				}
 			}
-		}
 
-		return reply.code(200).send('Logout Successful');
+			return reply.code(200).send('Logout Successful');
+		} catch (err) {
+			return reply.code(500).send(err.message || 'Logout Error');
+		}
 	});
 };
 
-const validate = async (request, response, next, hdbCore, logging) => {
-	const userToken = request.headers.authorization;
-	const [user, token] = userToken.split('.');
+const validate = async (request, response, next, hdbCore) => {
 	try {
+		const { user, token } = extractToken(request.headers.authorization);
 		const results = await hdbCore.requestWithoutAuthentication({
 			body: {
 				operation: 'search_by_hash',
@@ -166,7 +169,9 @@ const validate = async (request, response, next, hdbCore, logging) => {
 
 		const { token: hashedToken } = results[0];
 
-		if (!timingSafeEqual(token, hashedToken)) {
+		const hashedReceivedToken = await makeHash(token);
+
+		if (!timingSafeEqual(Buffer.from(hashedReceivedToken), Buffer.from(hashedToken))) {
 			return response.code(401).send('HDB Token Error');
 		}
 
@@ -176,8 +181,8 @@ const validate = async (request, response, next, hdbCore, logging) => {
 		request.body.hdb_user = { role: { permission: { super_user: true } } };
 		return next();
 	} catch (error) {
-		console.log('error', error);
-		return response.code(500).send('HDB Token Error');
+		console.error('error', error);
+		return response.code(500).send(error.message || 'HDB Token Error');
 	}
 };
 
