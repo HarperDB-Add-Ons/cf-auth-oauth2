@@ -1,18 +1,20 @@
-import bcrypt from 'bcrypt';
-import crypto from 'crypto';
-import fs from 'fs';
+import { timingSafeEqual, randomBytes, pbkdf2 } from 'crypto';
+import { existsSync, readFileSync } from 'fs';
 import oauthPlugin from 'fastify-oauth2';
-
 import { fileURLToPath } from 'url';
 import { join } from 'path';
+import { promisify } from 'util';
+
+const randomBytesAsync = promisify(randomBytes);
+const pbkdf2Async = promisify(pbkdf2);
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 // use config file location
 const configFilePath = join(__dirname, '..', '.authConfig.json');
 
 // use config file (if present) or ENV variables
-const CONFIG = fs.existsSync(configFilePath)
-	? JSON.parse(fs.readFileSync(configFilePath))
+const CONFIG = existsSync(configFilePath)
+	? JSON.parse(readFileSync(configFilePath))
 	: {
 			provider: process.env.PROVIDER,
 			loginPath: process.env.LOGIN_PATH,
@@ -67,7 +69,7 @@ async function setupSchema(request, response, hdbCore, logger) {
 	return response.code(200).send('HDB Auth has been setup');
 }
 
-const loadRoutes = async ({ server, hdbCore, logger }) => {
+const loadRoutes = async ({ server, hdbCore }) => {
 	server.register(oauthPlugin, {
 		name: 'githubOAuth2',
 		credentials: {
@@ -84,19 +86,9 @@ const loadRoutes = async ({ server, hdbCore, logger }) => {
 	server.get(`/${callback}`, async function (request, reply) {
 		const token = await this.githubOAuth2.getAccessTokenFromAuthorizationCodeFlow(request);
 
-		const hdbToken = await new Promise((resolve) => {
-			crypto.randomBytes(12, (error, buffer) => {
-				resolve(buffer.toString('hex'));
-			});
-		});
-
-		const hdbTokenUser = await new Promise((resolve) => {
-			crypto.randomBytes(6, (error, buffer) => {
-				resolve(buffer.toString('hex'));
-			});
-		});
-
-		const hashedToken = bcrypt.hashSync(hdbToken, CONFIG.salt_rounds);
+		const hdbToken = (await randomBytesAsync(12)).toString('hex');
+		const hdbTokenUser = (await randomBytesAsync(12)).toString('hex');
+		const hashedToken = await pbkdf2Async(hdbToken, CONFIG.salt, 100000, 64, 'sha512');
 
 		await hdbCore.requestWithoutAuthentication({
 			body: {
@@ -127,7 +119,7 @@ const loadRoutes = async ({ server, hdbCore, logger }) => {
 
 		for (const result of results) {
 			const hashedToken = result.token;
-			if (bcrypt.compareSync(token, hashedToken)) {
+			if (timingSafeEqual(token, hashedToken)) {
 				await hdbCore.requestWithoutAuthentication({
 					body: {
 						operation: 'delete',
@@ -162,7 +154,7 @@ const validate = async (request, response, next, hdbCore, logging) => {
 
 		const { token: hashedToken } = results[0];
 
-		if (!bcrypt.compareSync(token, hashedToken)) {
+		if (!timingSafeEqual(token, hashedToken)) {
 			return response.code(401).send('HDB Token Error');
 		}
 
