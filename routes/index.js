@@ -37,7 +37,7 @@ export default async (server, { hdbCore, logger }) => {
 					operation: 'create_table',
 					schema,
 					table,
-					hash_attritbute: 'id',
+					hash_attribute: 'id',
 				},
 			});
 		},
