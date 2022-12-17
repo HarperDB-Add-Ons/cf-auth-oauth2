@@ -115,7 +115,7 @@ const loadRoutes = async ({ server, hdbCore }) => {
 		return `${hdbTokenUser}.${hdbToken}`;
 	});
 
-	server.get(`/${CONFIG.logout}`, async function (request, reply) {
+	server.get(`${CONFIG.logout}`, async function (request, reply) {
 		try {
 			const { user, token } = extractToken(request.headers.authorization);
 
