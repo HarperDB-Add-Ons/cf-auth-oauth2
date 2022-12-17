@@ -21,7 +21,7 @@ LOGOUT: /logout
 ```
 
 ## How to Use
-**note: in the below examples, "OAuth" is the given name of the Custom Function, and it's using the GitHub provider OAuth provider.
+**note: in the below examples, "oauth" is the given name of the Custom Function, and it's using the GitHub provider OAuth provider.
 
 1. Ensure the above config file or environment variables have been set.
 2. Create a GET request to [$HOST/oauth/setup]($HOST/oauth/setup) to create the auth schema and table.
