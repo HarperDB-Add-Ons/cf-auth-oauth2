@@ -21,12 +21,13 @@ LOGOUT: /logout
 ```
 
 ## How to Use
-**note: in the below examples, "oauth" is the given name of the Custom Function and it's using the GitHub provider OAuth provider.
+**note: in the below examples, "OAuth" is the given name of the Custom Function, and it's using the GitHub provider OAuth provider.
 
 1. Ensure the above config file or environment variables have been set.
 2. Create a GET request to [$HOST/oauth/setup]($HOST/oauth/setup) to create the auth schema and table.
 3. Visit [http://$HOST/oauth/login/github](http://$HOST/oauth/login/github) to be redirected to the GitHub authorization page to create a token.
 4. Save the return HDB Token for use in the Authorization header for the following requests.
+  - You should use the token in the Authorization header in the format `harperdb $token`
 5. With the HDB Token in the Authorization header, make a GET call to [http://$HOST/oauth/create/schema/:schema](http://$HOST/oauth/create/schema/:schema) to create a schema
 6. With the HDB Token in the Authorization header, make a GET call to [http://$HOST/oauth/create/table/:schema/:table](http://$HOST/oauth/create/table/:schema/:table) to create a table
 7. With the HDB Token in the Authorization header, make a POST call to [http://$HOST/oauth/:schema/:table](http://$HOST/oauth/:schema/:table) to insert records into the server (the request body can be an object or an array of objects).
@@ -36,9 +37,9 @@ LOGOUT: /logout
 There's a Postman collection available in this repo - HarperDB OAuth.postman_collection
 
 ## Structure and Updates
-The majority of the functionality is contained in the helpers/authHelper.js file. Here the configuration is loaded and used to setup [the Fastify-OAuth2 library](https://github.com/fastify/fastify-oauth2), which is a wrapper around the [Simple OAuth2.0 library](https://github.com/lelylan/simple-oauth2).
+The majority of the functionality is contained in the helpers/authHelper.js file. Here the configuration is loaded and used to set up [the Fastify-OAuth2](https://github.com/fastify/fastify-oauth2) library](https://github.com/fastify/fastify-oauth2), which is a wrapper around the [Simple OAuth2.0 library](https://github.com/lelylan/simple-oauth2).
 
-Refer to the fastify-oauth2 doc for a list of providers and to the simple-oauth2 documentation for additional configuration options.
+Refer to the fastify-oauth2 doc for a list of providers and the simple-oauth2 documentation for additional configuration options.
 
 ## Running Locally
 There's a Makefile located in this repo that will start a containerized instance of HarperDB with the Custom Function mounted to the src directory.
