@@ -16,7 +16,7 @@ LOGINPATH: /login/github,
 CALLBACK: http://localhost:9926/oauth/callback,
 SCHEMA: hdb_auth,
 TABLE: sessions,
-SALT_ROUNDS: 5,
+SALT: 'some random string',
 LOGOUT: /logout
 ```
 
