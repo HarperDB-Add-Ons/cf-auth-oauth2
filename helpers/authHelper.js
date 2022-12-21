@@ -1,18 +1,20 @@
-import bcrypt from 'bcrypt';
-import crypto from 'crypto';
-import fs from 'fs';
+import { timingSafeEqual, randomBytes, pbkdf2 } from 'crypto';
+import { existsSync, readFileSync } from 'fs';
 import oauthPlugin from 'fastify-oauth2';
-
 import { fileURLToPath } from 'url';
 import { join } from 'path';
+import { promisify } from 'util';
+
+const randomBytesAsync = promisify(randomBytes);
+const pbkdf2Async = promisify(pbkdf2);
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 // use config file location
 const configFilePath = join(__dirname, '..', '.authConfig.json');
 
 // use config file (if present) or ENV variables
-const CONFIG = fs.existsSync(configFilePath)
-	? JSON.parse(fs.readFileSync(configFilePath))
+const CONFIG = existsSync(configFilePath)
+	? JSON.parse(readFileSync(configFilePath))
 	: {
 			provider: process.env.PROVIDER,
 			loginPath: process.env.LOGIN_PATH,
@@ -26,6 +28,19 @@ const CONFIG = fs.existsSync(configFilePath)
 				secret: process.env.CLIENT_SECRET,
 			},
 	  };
+
+
+const makeHash = async (token) => (await pbkdf2Async(token, CONFIG.salt, 100000, 64, 'sha512')).toString('hex');
+
+const extractToken = (authorizationHeader) => {
+	const [type, fullToken] = authorizationHeader.split(' ');
+	if (type !== 'harperdb') {
+		throw new Error('Invalid Authorization Type');
+	}
+
+	const [user, token] = fullToken.split('.');
+	return { user, token };
+};
 
 /**
  * Create the schema and table for the authentication tokens
@@ -67,7 +82,7 @@ async function setupSchema(request, response, hdbCore, logger) {
 	return response.code(200).send('HDB Auth has been setup');
 }
 
-const loadRoutes = async ({ server, hdbCore, logger }) => {
+const loadRoutes = async ({ server, hdbCore }) => {
 	server.register(oauthPlugin, {
 		name: 'githubOAuth2',
 		credentials: {
@@ -81,22 +96,12 @@ const loadRoutes = async ({ server, hdbCore, logger }) => {
 	});
 
 	const callback = CONFIG.callback.split('/').pop();
-	server.get(`/${callback}`, async function (request, reply) {
-		const token = await this.githubOAuth2.getAccessTokenFromAuthorizationCodeFlow(request);
+	server.get(`/${callback}`, async function (request) {
+		const { access_token } = await this.githubOAuth2.getAccessTokenFromAuthorizationCodeFlow(request);
 
-		const hdbToken = await new Promise((resolve) => {
-			crypto.randomBytes(12, (error, buffer) => {
-				resolve(buffer.toString('hex'));
-			});
-		});
-
-		const hdbTokenUser = await new Promise((resolve) => {
-			crypto.randomBytes(6, (error, buffer) => {
-				resolve(buffer.toString('hex'));
-			});
-		});
-
-		const hashedToken = bcrypt.hashSync(hdbToken, CONFIG.salt_rounds);
+		const hdbToken = await makeHash(access_token);
+		const hdbTokenUser = (await randomBytesAsync(12)).toString('hex');
+		const hashedToken = await makeHash(hdbToken);
 
 		await hdbCore.requestWithoutAuthentication({
 			body: {
@@ -108,45 +113,47 @@ const loadRoutes = async ({ server, hdbCore, logger }) => {
 		});
 
 		return `${hdbTokenUser}.${hdbToken}`;
-		reply.send({ access_token: token.access_token });
 	});
 
-	server.get(`/${CONFIG.logout}`, async function (request, reply) {
-		const userToken = request.headers.authorization;
-		const [user, token] = userToken.split('.');
+	server.get(`${CONFIG.logout}`, async function (request, reply) {
+		try {
+			const { user, token } = extractToken(request.headers.authorization);
 
-		const results = await hdbCore.requestWithoutAuthentication({
-			body: {
-				operation: 'search_by_hash',
-				schema: CONFIG.schema,
-				table: CONFIG.table,
-				hash_values: [user],
-				get_attributes: ['token'],
-			},
-		});
+			const results = await hdbCore.requestWithoutAuthentication({
+				body: {
+					operation: 'search_by_hash',
+					schema: CONFIG.schema,
+					table: CONFIG.table,
+					hash_values: [user],
+					get_attributes: ['token'],
+				},
+			});
 
-		for (const result of results) {
-			const hashedToken = result.token;
-			if (bcrypt.compareSync(token, hashedToken)) {
-				await hdbCore.requestWithoutAuthentication({
-					body: {
-						operation: 'delete',
-						schema: CONFIG.schema,
-						table: CONFIG.table,
-						hash_values: [user],
-					},
-				});
+			for (const result of results) {
+				const hashedToken = result.token;
+				const hashedReceivedToken = await makeHash(token);
+				if (timingSafeEqual(Buffer.from(hashedReceivedToken), Buffer.from(hashedToken))) {
+					await hdbCore.requestWithoutAuthentication({
+						body: {
+							operation: 'delete',
+							schema: CONFIG.schema,
+							table: CONFIG.table,
+							hash_values: [user],
+						},
+					});
+				}
 			}
-		}
 
-		return reply.code(200).send('Logout Successful');
+			return reply.code(200).send('Logout Successful');
+		} catch (err) {
+			return reply.code(500).send(err.message || 'Logout Error');
+		}
 	});
 };
 
-const validate = async (request, response, next, hdbCore, logging) => {
-	const userToken = request.headers.authorization;
-	const [user, token] = userToken.split('.');
+const validate = async (request, response, next, hdbCore) => {
 	try {
+		const { user, token } = extractToken(request.headers.authorization);
 		const results = await hdbCore.requestWithoutAuthentication({
 			body: {
 				operation: 'search_by_hash',
@@ -162,7 +169,9 @@ const validate = async (request, response, next, hdbCore, logging) => {
 
 		const { token: hashedToken } = results[0];
 
-		if (!bcrypt.compareSync(token, hashedToken)) {
+		const hashedReceivedToken = await makeHash(token);
+
+		if (!timingSafeEqual(Buffer.from(hashedReceivedToken), Buffer.from(hashedToken))) {
 			return response.code(401).send('HDB Token Error');
 		}
 
@@ -172,8 +181,8 @@ const validate = async (request, response, next, hdbCore, logging) => {
 		request.body.hdb_user = { role: { permission: { super_user: true } } };
 		return next();
 	} catch (error) {
-		console.log('error', error);
-		return response.code(500).send('HDB Token Error');
+		console.error('error', error);
+		return response.code(500).send(error.message || 'HDB Token Error');
 	}
 };
 
